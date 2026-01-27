@@ -2,194 +2,262 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>华东理工大学电费监控</title>
-    <link href="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>宿舍电量监控</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
     <style>
-        body { background: #f4f6f9; }
-        .card { border: none; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 20px; }
-        .stat-num { font-size: 2rem; font-weight: 700; color: #0d6efd; }
-        .loading-mask { position: fixed; top:0; left:0; width:100%; height:100%; background:white; z-index:999; display:flex; justify-content:center; align-items:center; }
+        /* 针对移动端的额外优化 */
+        body { -webkit-tap-highlight-color: transparent; }
     </style>
 </head>
-<body>
+<body class="bg-gray-100 text-gray-800 font-sans min-h-screen">
 
-<div id="loading" class="loading-mask">
-    <div class="spinner-border text-primary" role="status"></div>
-</div>
-
-<div class="container py-4">
-    <div class="row mb-4 align-items-center">
-        <div class="col-md-6">
-            <h4 class="fw-bold mb-0">⚡宿舍电费监控中心</h4>
-        </div>
-        <div class="col-md-6 mt-3 mt-md-0 d-flex justify-content-md-end align-items-center">
-            <label class="me-2 text-muted">选择用户:</label>
-            <select id="user-select" class="form-select w-auto shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        
+        <header class="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                    <span>⚡</span> 宿舍电量监控
+                </h1>
+                <p class="text-sm text-gray-500 mt-1">实时追踪与预警系统 (GitHub Pages)</p>
+            </div>
+            
+            <div class="w-full md:w-auto">
+                <select id="roomSelect" class="w-full md:w-64 p-3 border border-gray-300 rounded-lg shadow-sm bg-white text-base focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all" onchange="renderRoom()">
+                    <option value="">正在加载配置...</option>
                 </select>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6 mb-6">
+            <div class="bg-white p-4 md:p-6 rounded-xl shadow-sm border-t-4 border-blue-500 flex flex-col justify-between">
+                <div class="text-gray-500 text-xs md:text-sm font-medium uppercase tracking-wide">剩余电量</div>
+                <div class="mt-2">
+                    <span class="text-2xl md:text-3xl font-bold text-gray-900" id="val_kwh">--</span>
+                    <span class="text-xs text-gray-400 ml-1">kWh</span>
+                </div>
+            </div>
+
+            <div class="bg-white p-4 md:p-6 rounded-xl shadow-sm border-t-4 border-green-500 flex flex-col justify-between">
+                <div class="text-gray-500 text-xs md:text-sm font-medium uppercase tracking-wide">预计可用</div>
+                <div class="mt-2">
+                    <span class="text-2xl md:text-3xl font-bold text-gray-900" id="val_hours">--</span>
+                    <span class="text-xs text-gray-400 ml-1">小时</span>
+                </div>
+            </div>
+
+            <div class="bg-white p-4 md:p-6 rounded-xl shadow-sm border-t-4 border-orange-500 flex flex-col justify-between">
+                <div class="text-gray-500 text-xs md:text-sm font-medium uppercase tracking-wide">实时功率 (1h)</div>
+                <div class="mt-2">
+                    <span class="text-2xl md:text-3xl font-bold text-gray-900" id="val_p1h">--</span>
+                    <span class="text-xs text-gray-400 ml-1">kW</span>
+                </div>
+            </div>
+
+            <div class="bg-white p-4 md:p-6 rounded-xl shadow-sm border-t-4 border-purple-500 flex flex-col justify-between">
+                <div class="text-gray-500 text-xs md:text-sm font-medium uppercase tracking-wide">平均功率 (24h)</div>
+                <div class="mt-2">
+                    <span class="text-2xl md:text-3xl font-bold text-gray-900" id="val_p24h">--</span>
+                    <span class="text-xs text-gray-400 ml-1">kW</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            <div class="bg-white p-4 md:p-6 rounded-xl shadow-sm">
+                <h3 class="text-base md:text-lg font-semibold mb-4 text-gray-700 flex items-center gap-2">
+                    <span class="w-2 h-6 bg-blue-500 rounded-full"></span>
+                    近30天电量趋势
+                </h3>
+                <div class="relative h-64 md:h-80 w-full">
+                    <canvas id="kwhChart"></canvas>
+                </div>
+            </div>
+
+            <div class="bg-white p-4 md:p-6 rounded-xl shadow-sm">
+                <h3 class="text-base md:text-lg font-semibold mb-4 text-gray-700 flex items-center gap-2">
+                    <span class="w-2 h-6 bg-orange-500 rounded-full"></span>
+                    近30天功率波动
+                </h3>
+                <div class="relative h-64 md:h-80 w-full">
+                    <canvas id="powerChart"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <div class="text-center text-gray-400 text-xs md:text-sm pb-8">
+            <p>数据最后更新: <span id="lastUpdate" class="font-mono text-gray-500">--</span></p>
+            <p class="mt-2 text-gray-300 scale-90">Powered by GitHub Actions</p>
         </div>
     </div>
 
-    <div class="row g-3 mb-4">
-        <div class="col-6 col-md-3">
-            <div class="card p-3">
-                <div class="text-muted small">当前剩余</div>
-                <div class="stat-num" id="curr-kwh">--</div>
-            </div>
-        </div>
-        <div class="col-6 col-md-3">
-            <div class="card p-3">
-                <div class="text-muted small">昨日用电 (kWh)</div>
-                <div class="stat-num text-dark" id="yesterday-use">--</div>
-            </div>
-        </div>
-        <div class="col-6 col-md-3">
-            <div class="card p-3">
-                <div class="text-muted small">24h平均功率 (W)</div>
-                <div class="stat-num text-warning" id="avg-power">--</div>
-            </div>
-        </div>
-        <div class="col-6 col-md-3">
-            <div class="card p-3">
-                <div class="text-muted small">预计可用</div>
-                <div class="stat-num text-danger" style="font-size: 1.5rem" id="predict-time">--</div>
-                <small class="text-muted" id="predict-date" style="font-size: 0.8rem">--</small>
-            </div>
-        </div>
-    </div>
+    <script>
+        let fullData = {};
+        let configData = [];
+        let kwhChartInst = null;
+        let powerChartInst = null;
 
-    <div class="card p-3">
-        <h6 class="fw-bold">📈 历史趋势</h6>
-        <div id="mainChart" style="height: 400px; width: 100%;"></div>
-    </div>
-    
-    <div class="text-center mt-3 text-muted small" id="last-update"></div>
-</div>
-
-<script src="https://cdn.bootcdn.net/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
-<script src="https://cdn.bootcdn.net/ajax/libs/moment.js/2.29.4/moment.min.js"></script>
-
-<script>
-    let allData = {};
-    let mainChart = null;
-
-    async function init() {
-        try {
-            const res = await fetch('data.json?t=' + Date.now());
-            if(!res.ok) throw new Error("Load failed");
-            allData = await res.json();
-            
-            const users = Object.keys(allData);
-            if (users.length === 0) {
-                alert("无数据"); return;
-            }
-
-            // 填充下拉菜单
-            const select = document.getElementById('user-select');
-            users.forEach(user => {
-                const opt = document.createElement('option');
-                opt.value = user;
-                opt.innerText = user;
-                select.appendChild(opt);
-            });
-
-            // 监听切换事件
-            select.addEventListener('change', (e) => renderUser(e.target.value));
-
-            // 默认显示第一个用户
-            renderUser(users[0]);
-            
-            document.getElementById('loading').style.display = 'none';
-        } catch (e) {
-            console.error(e);
-            document.getElementById('loading').innerText = "加载失败，请检查 data.json";
-        }
-    }
-
-    function renderUser(name) {
-        const data = allData[name];
-        if (!data || data.length === 0) return;
-
-        // 排序
-        data.sort((a, b) => new Date(a.time) - new Date(b.time));
-
-        const times = [];
-        const kwhs = [];
-        const powers = [];
-        let yesterdayUsage = 0;
-        const yesterday = moment().subtract(1, 'days').format('YYYY-MM-DD');
-
-        // 计算逻辑
-        for (let i = 0; i < data.length; i++) {
-            const curr = data[i];
-            times.push(curr.time);
-            kwhs.push(curr.kWh);
-
-            let p = 0;
-            if (i > 0) {
-                const prev = data[i-1];
-                const diffH = moment(curr.time).diff(moment(prev.time), 'hours', true);
-                const diffK = prev.kWh - curr.kWh;
-
-                if (diffH > 0 && diffK > -5) {
-                    if (diffK >= 0) {
-                        p = (diffK / diffH) * 1000;
-                        if (moment(curr.time).format('YYYY-MM-DD') === yesterday) {
-                            yesterdayUsage += diffK;
-                        }
+        // 图表通用配置：适配移动端字体大小和布局
+        const commonChartOptions = {
+            responsive: true,
+            maintainAspectRatio: false, // 允许填满父容器的高度
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            },
+            plugins: {
+                legend: {
+                    position: 'bottom', // 图例放在底部更适合手机
+                    labels: {
+                        boxWidth: 12,
+                        padding: 15,
+                        font: { size: 11 } 
                     }
                 }
+            },
+            scales: {
+                x: {
+                    ticks: {
+                        maxTicksLimit: 6, // 限制x轴标签数量，防止手机上重叠
+                        maxRotation: 0,
+                        font: { size: 10 }
+                    },
+                    grid: { display: false }
+                },
+                y: {
+                    ticks: { font: { size: 10 } },
+                    grid: { color: '#f3f4f6' }
+                }
             }
-            powers.push(Math.round(p));
+        };
+
+        async function init() {
+            try {
+                // 添加时间戳防止 GitHub Pages 缓存旧数据
+                const t = new Date().getTime();
+                
+                // 注意：这里改为读取 public_config.json
+                const [cfgRes, dataRes] = await Promise.all([
+                    fetch(`./public_config.json?t=${t}`),
+                    fetch(`./data.json?t=${t}`)
+                ]);
+                
+                if (!cfgRes.ok || !dataRes.ok) throw new Error("File not found");
+
+                configData = await cfgRes.json();
+                fullData = await dataRes.json();
+
+                const select = document.getElementById('roomSelect');
+                select.innerHTML = '';
+                
+                if (configData.length === 0) {
+                    select.innerHTML = '<option>无房间配置</option>';
+                    return;
+                }
+
+                configData.forEach((room) => {
+                    const opt = document.createElement('option');
+                    opt.value = room.id;
+                    opt.text = room.name;
+                    select.add(opt);
+                });
+
+                renderRoom();
+
+            } catch (e) {
+                const select = document.getElementById('roomSelect');
+                select.innerHTML = '<option>数据加载失败</option>';
+                console.error(e);
+                alert("无法加载数据。\n如果是首次部署，请等待 GitHub Action 运行完成。\n如果多次失败，请检查 Actions 日志。");
+            }
         }
 
-        // --- 更新UI ---
-        const last = data[data.length-1];
-        const prev = data.length > 1 ? data[data.length-2] : last;
-        
-        document.getElementById('curr-kwh').innerText = last.kWh.toFixed(2);
-        document.getElementById('yesterday-use').innerText = yesterdayUsage.toFixed(2);
-        
-        const recentP = powers.slice(-24);
-        const avgP = recentP.reduce((a,b)=>a+b,0) / (recentP.length||1);
-        document.getElementById('avg-power').innerText = Math.round(avgP);
-        document.getElementById('last-update').innerText = "最后更新: " + last.time;
-
-        // 预测
-        const recentData = data.slice(-72); // 看最近3天
-        if (recentData.length > 5) {
-            const consumed = recentData[0].kWh - recentData[recentData.length-1].kWh;
-            if (consumed > 0) {
-                const days = moment(recentData[recentData.length-1].time).diff(moment(recentData[0].time), 'days', true);
-                const daysLeft = last.kWh / (consumed/days);
-                document.getElementById('predict-time').innerText = daysLeft.toFixed(1) + "天";
-                document.getElementById('predict-date').innerText = moment().add(daysLeft, 'days').format('MM-DD HH时');
-            } else {
-                document.getElementById('predict-time').innerText = "充电中";
+        function renderRoom() {
+            const roomId = document.getElementById('roomSelect').value;
+            const history = fullData[roomId];
+            
+            if (!history || history.length === 0) {
+                document.getElementById('val_kwh').innerText = "-";
+                document.getElementById('val_hours').innerText = "-";
+                document.getElementById('val_p1h').innerText = "-";
+                document.getElementById('val_p24h').innerText = "-";
+                document.getElementById('lastUpdate').innerText = "--";
+                return;
             }
+
+            const latest = history[history.length - 1];
+            
+            document.getElementById('val_kwh').innerText = latest.kwh.toFixed(2);
+            document.getElementById('val_hours').innerText = latest.estimated_hours > 1000 ? "充足" : latest.estimated_hours.toFixed(1);
+            document.getElementById('val_p1h').innerText = latest.power_1h.toFixed(3);
+            document.getElementById('val_p24h').innerText = latest.power_24h.toFixed(3);
+            document.getElementById('lastUpdate').innerText = dayjs(latest.time).format('YYYY-MM-DD HH:mm:ss');
+
+            // 数据采样优化：防止图表点太密
+            const step = Math.ceil(history.length / 100); 
+            const recentHistory = history.filter((_, index) => index % step === 0).slice(-100); 
+            
+            const labels = recentHistory.map(item => dayjs(item.time).format('MM-DD HH:mm'));
+            const kwhData = recentHistory.map(item => item.kwh);
+            // 功率小于0（充电时）显示为0，避免图表混乱
+            const powerData = recentHistory.map(item => item.power_1h > 0 ? item.power_1h : 0);
+
+            renderCharts(labels, kwhData, powerData);
         }
 
-        // --- 绘图 ---
-        if (!mainChart) mainChart = echarts.init(document.getElementById('mainChart'));
-        
-        mainChart.setOption({
-            tooltip: { trigger: 'axis' },
-            legend: { data: ['电量', '功率'] },
-            grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-            xAxis: { type: 'category', data: times.map(t => t.substring(5, 16)) },
-            yAxis: [
-                { type: 'value', name: 'kWh', scale: true },
-                { type: 'value', name: 'W', splitLine: { show: false } }
-            ],
-            series: [
-                { name: '电量', type: 'line', data: kwhs, smooth: true, itemStyle:{color:'#0d6efd'}, areaStyle:{opacity:0.1} },
-                { name: '功率', type: 'bar', yAxisIndex: 1, data: powers, itemStyle:{color:'rgba(255, 193, 7, 0.5)'} }
-            ]
-        }, true); // true 表示不合并，完全重绘
-    }
+        function renderCharts(labels, kwhData, powerData) {
+            const ctxKwh = document.getElementById('kwhChart').getContext('2d');
+            const ctxPower = document.getElementById('powerChart').getContext('2d');
 
-    init();
-    window.onresize = () => mainChart && mainChart.resize();
-</script>
+            if (kwhChartInst) kwhChartInst.destroy();
+            if (powerChartInst) powerChartInst.destroy();
+
+            // 电量图 (折线)
+            kwhChartInst = new Chart(ctxKwh, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '电量 (kWh)',
+                        data: kwhData,
+                        borderColor: 'rgb(59, 130, 246)',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 0, // 移动端隐藏点，触摸时才显示
+                        pointHitRadius: 20
+                    }]
+                },
+                options: commonChartOptions
+            });
+
+            // 功率图 (柱状)
+            powerChartInst = new Chart(ctxPower, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '功率 (kW)',
+                        data: powerData,
+                        backgroundColor: 'rgba(249, 115, 22, 0.8)',
+                        borderRadius: 2,
+                    }]
+                },
+                options: commonChartOptions
+            });
+        }
+
+        // 初始化
+        init();
+        
+        // 监听窗口大小变化，重绘图表以保证布局正确
+        window.addEventListener('resize', () => {
+            if(kwhChartInst) kwhChartInst.resize();
+            if(powerChartInst) powerChartInst.resize();
+        });
+    </script>
 </body>
 </html>

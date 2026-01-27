@@ -1,38 +1,50 @@
-name: Monitor Electricity
+name: Electricity Monitor
 
 on:
   schedule:
-    - cron: '0 * * * *' # 每小时
-  workflow_dispatch:
-
-permissions:
-  contents: write
+    # 每小时运行一次 (第0分钟)
+    - cron: '0 * * * *'
+  workflow_dispatch: # 允许手动触发
 
 jobs:
-  build:
+  update-data:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # 必须开启写入权限以提交 data.json
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.9'
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
 
-    - name: Install dependencies
-      run: pip install requests
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
 
-    - name: Run crawler
-      env:
-        # 这里引用刚才设置的 Secret
-        USERS_CONFIG: ${{ secrets.USERS_CONFIG }} 
-      run: python main.py
+      - name: Run monitor script
+        env:
+          # 从 GitHub Secrets 读取配置
+          APP_CONFIG: ${{ secrets.APP_CONFIG }}
+          # 设置时区为北京时间
+          TZ: 'Asia/Shanghai'
+        run: |
+          python main.py
 
-    - name: Commit and push
-      run: |
-        git config --global user.name "GitHub Action"
-        git config --global user.email "action@github.com"
-        git add data.json
-        git commit -m "Update multi-user data $(date)" || exit 0
-        git push
+      - name: Commit and push changes
+        run: |
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+          
+          # 检查是否有文件变化
+          if [[ -n $(git status -s) ]]; then
+            git add data.json public_config.json
+            git commit -m "Auto update: electricity data [skip ci]"
+            git push
+          else
+            echo "No changes to commit"
+          fi
