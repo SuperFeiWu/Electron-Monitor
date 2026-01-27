@@ -1,0 +1,38 @@
+name: Monitor Electricity
+
+on:
+  schedule:
+    - cron: '0 * * * *' # 每小时
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: pip install requests
+
+    - name: Run crawler
+      env:
+        # 这里引用刚才设置的 Secret
+        USERS_CONFIG: ${{ secrets.USERS_CONFIG }} 
+      run: python main.py
+
+    - name: Commit and push
+      run: |
+        git config --global user.name "GitHub Action"
+        git config --global user.email "action@github.com"
+        git add data.json
+        git commit -m "Update multi-user data $(date)" || exit 0
+        git push
