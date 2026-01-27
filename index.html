@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>华东理工大学电费监控</title>
+    <link href="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background: #f4f6f9; }
+        .card { border: none; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        .stat-num { font-size: 2rem; font-weight: 700; color: #0d6efd; }
+        .loading-mask { position: fixed; top:0; left:0; width:100%; height:100%; background:white; z-index:999; display:flex; justify-content:center; align-items:center; }
+    </style>
+</head>
+<body>
+
+<div id="loading" class="loading-mask">
+    <div class="spinner-border text-primary" role="status"></div>
+</div>
+
+<div class="container py-4">
+    <div class="row mb-4 align-items-center">
+        <div class="col-md-6">
+            <h4 class="fw-bold mb-0">⚡宿舍电费监控中心</h4>
+        </div>
+        <div class="col-md-6 mt-3 mt-md-0 d-flex justify-content-md-end align-items-center">
+            <label class="me-2 text-muted">选择用户:</label>
+            <select id="user-select" class="form-select w-auto shadow-sm">
+                </select>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+            <div class="card p-3">
+                <div class="text-muted small">当前剩余</div>
+                <div class="stat-num" id="curr-kwh">--</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card p-3">
+                <div class="text-muted small">昨日用电 (kWh)</div>
+                <div class="stat-num text-dark" id="yesterday-use">--</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card p-3">
+                <div class="text-muted small">24h平均功率 (W)</div>
+                <div class="stat-num text-warning" id="avg-power">--</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card p-3">
+                <div class="text-muted small">预计可用</div>
+                <div class="stat-num text-danger" style="font-size: 1.5rem" id="predict-time">--</div>
+                <small class="text-muted" id="predict-date" style="font-size: 0.8rem">--</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="card p-3">
+        <h6 class="fw-bold">📈 历史趋势</h6>
+        <div id="mainChart" style="height: 400px; width: 100%;"></div>
+    </div>
+    
+    <div class="text-center mt-3 text-muted small" id="last-update"></div>
+</div>
+
+<script src="https://cdn.bootcdn.net/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
+<script src="https://cdn.bootcdn.net/ajax/libs/moment.js/2.29.4/moment.min.js"></script>
+
+<script>
+    let allData = {};
+    let mainChart = null;
+
+    async function init() {
+        try {
+            const res = await fetch('data.json?t=' + Date.now());
+            if(!res.ok) throw new Error("Load failed");
+            allData = await res.json();
+            
+            const users = Object.keys(allData);
+            if (users.length === 0) {
+                alert("无数据"); return;
+            }
+
+            // 填充下拉菜单
+            const select = document.getElementById('user-select');
+            users.forEach(user => {
+                const opt = document.createElement('option');
+                opt.value = user;
+                opt.innerText = user;
+                select.appendChild(opt);
+            });
+
+            // 监听切换事件
+            select.addEventListener('change', (e) => renderUser(e.target.value));
+
+            // 默认显示第一个用户
+            renderUser(users[0]);
+            
+            document.getElementById('loading').style.display = 'none';
+        } catch (e) {
+            console.error(e);
+            document.getElementById('loading').innerText = "加载失败，请检查 data.json";
+        }
+    }
+
+    function renderUser(name) {
+        const data = allData[name];
+        if (!data || data.length === 0) return;
+
+        // 排序
+        data.sort((a, b) => new Date(a.time) - new Date(b.time));
+
+        const times = [];
+        const kwhs = [];
+        const powers = [];
+        let yesterdayUsage = 0;
+        const yesterday = moment().subtract(1, 'days').format('YYYY-MM-DD');
+
+        // 计算逻辑
+        for (let i = 0; i < data.length; i++) {
+            const curr = data[i];
+            times.push(curr.time);
+            kwhs.push(curr.kWh);
+
+            let p = 0;
+            if (i > 0) {
+                const prev = data[i-1];
+                const diffH = moment(curr.time).diff(moment(prev.time), 'hours', true);
+                const diffK = prev.kWh - curr.kWh;
+
+                if (diffH > 0 && diffK > -5) {
+                    if (diffK >= 0) {
+                        p = (diffK / diffH) * 1000;
+                        if (moment(curr.time).format('YYYY-MM-DD') === yesterday) {
+                            yesterdayUsage += diffK;
+                        }
+                    }
+                }
+            }
+            powers.push(Math.round(p));
+        }
+
+        // --- 更新UI ---
+        const last = data[data.length-1];
+        const prev = data.length > 1 ? data[data.length-2] : last;
+        
+        document.getElementById('curr-kwh').innerText = last.kWh.toFixed(2);
+        document.getElementById('yesterday-use').innerText = yesterdayUsage.toFixed(2);
+        
+        const recentP = powers.slice(-24);
+        const avgP = recentP.reduce((a,b)=>a+b,0) / (recentP.length||1);
+        document.getElementById('avg-power').innerText = Math.round(avgP);
+        document.getElementById('last-update').innerText = "最后更新: " + last.time;
+
+        // 预测
+        const recentData = data.slice(-72); // 看最近3天
+        if (recentData.length > 5) {
+            const consumed = recentData[0].kWh - recentData[recentData.length-1].kWh;
+            if (consumed > 0) {
+                const days = moment(recentData[recentData.length-1].time).diff(moment(recentData[0].time), 'days', true);
+                const daysLeft = last.kWh / (consumed/days);
+                document.getElementById('predict-time').innerText = daysLeft.toFixed(1) + "天";
+                document.getElementById('predict-date').innerText = moment().add(daysLeft, 'days').format('MM-DD HH时');
+            } else {
+                document.getElementById('predict-time').innerText = "充电中";
+            }
+        }
+
+        // --- 绘图 ---
+        if (!mainChart) mainChart = echarts.init(document.getElementById('mainChart'));
+        
+        mainChart.setOption({
+            tooltip: { trigger: 'axis' },
+            legend: { data: ['电量', '功率'] },
+            grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+            xAxis: { type: 'category', data: times.map(t => t.substring(5, 16)) },
+            yAxis: [
+                { type: 'value', name: 'kWh', scale: true },
+                { type: 'value', name: 'W', splitLine: { show: false } }
+            ],
+            series: [
+                { name: '电量', type: 'line', data: kwhs, smooth: true, itemStyle:{color:'#0d6efd'}, areaStyle:{opacity:0.1} },
+                { name: '功率', type: 'bar', yAxisIndex: 1, data: powers, itemStyle:{color:'rgba(255, 193, 7, 0.5)'} }
+            ]
+        }, true); // true 表示不合并，完全重绘
+    }
+
+    init();
+    window.onresize = () => mainChart && mainChart.resize();
+</script>
+</body>
+</html>
