@@ -82,46 +82,81 @@ def get_electricity_balance(url):
         logging.error(f"爬取异常: {e}")
         return None
 
-# ... (保留 calculate_estimated_time 和 push_message 函数不变) ...
 def calculate_estimated_time(history, current_kwh, current_time):
-    # 这里直接复用你原来的代码，逻辑不需要变
+    """
+    计算功率和预计剩余时间
+    修正版：不再修改 history 中的原始数据，避免污染 data.json
+    """
     if not history:
         return {"power_1h": 0, "power_24h": 0, "hours_left": 9999}
     
+    # 辅助函数：解析时间字符串，返回 datetime 对象
+    def get_time(rec):
+        return datetime.datetime.fromisoformat(rec['time'])
+
     def find_past_record(delta_hours):
         target_time = current_time - datetime.timedelta(hours=delta_hours)
-        closest_rec = None
+        best_match = None
         min_diff = float('inf')
+        
+        # 倒序查找，找离目标时间点最近的记录
         for rec in reversed(history):
-            rec_time = datetime.datetime.fromisoformat(rec['time'])
-            diff = abs((rec_time - target_time).total_seconds())
+            rec_dt = get_time(rec)
+            diff = abs((rec_dt - target_time).total_seconds())
+            
             if diff < min_diff:
                 min_diff = diff
-                closest_rec = rec
-                closest_rec['dt'] = rec_time
-            if diff > 3600 * (delta_hours + 1): break
-        return closest_rec
+                # 返回一个元组 (记录本身, 解析后的时间对象)
+                # 这样就不需要修改 rec 字典了
+                best_match = (rec, rec_dt)
+            
+            # 如果差异超过范围（比如找1小时前的，结果找到了5小时前的），停止搜索
+            if diff > 3600 * (delta_hours + 1): 
+                break
+        return best_match
 
-    rec_1h = find_past_record(1)
-    rec_24h = find_past_record(24)
+    # 获取 1小时前 和 24小时前 的记录数据
+    match_1h = find_past_record(1)
+    match_24h = find_past_record(24)
+    
     power_1h = 0.0
     power_24h = 0.0
     
-    if rec_1h:
-        time_diff_h = (current_time - rec_1h['dt']).total_seconds() / 3600
-        kwh_diff = rec_1h['kwh'] - current_kwh
-        if time_diff_h > 0.1: power_1h = kwh_diff / time_diff_h
+    # 计算 1小时功率
+    if match_1h:
+        rec, rec_dt = match_1h
+        time_diff_h = (current_time - rec_dt).total_seconds() / 3600
+        kwh_diff = rec['kwh'] - current_kwh # 消耗量 = 过去 - 现在
+        if time_diff_h > 0.1: # 避免除以0或时间过短
+            power_1h = kwh_diff / time_diff_h
 
-    if rec_24h:
-        time_diff_h = (current_time - rec_24h['dt']).total_seconds() / 3600
-        kwh_diff = rec_24h['kwh'] - current_kwh
-        if time_diff_h > 0.5: power_24h = kwh_diff / time_diff_h
+    # 计算 24小时平均功率
+    if match_24h:
+        rec, rec_dt = match_24h
+        time_diff_h = (current_time - rec_dt).total_seconds() / 3600
+        kwh_diff = rec['kwh'] - current_kwh
+        if time_diff_h > 0.5:
+            power_24h = kwh_diff / time_diff_h
 
-    used_power = max(power_24h, 0.01) if power_1h < -0.1 else (power_1h if power_1h > 0 else max(power_24h, 0.01))
+    # 逻辑修正：如果功率计算出是负数（比如刚充了电），或者非常小，进行处理
+    # 优先使用 1h 功率，如果 1h 数据异常（例如负数），则回退到 24h
+    used_power = power_1h
+    if used_power <= 0: 
+        used_power = power_24h
+    
+    # 兜底：如果还是 0 或负数，给一个极小值避免除以 0
+    if used_power <= 0.001: 
+        used_power = 0.01
+
     hours_left = 9999.0
-    if used_power > 0.001: hours_left = current_kwh / used_power
+    if current_kwh > 0:
+        hours_left = current_kwh / used_power
 
-    return {"power_1h": round(power_1h, 3), "power_24h": round(power_24h, 3), "hours_left": round(hours_left, 1)}
+    return {
+        "power_1h": round(power_1h, 3), 
+        "power_24h": round(power_24h, 3), 
+        "hours_left": round(hours_left, 1)
+    }
 
 def push_message(tokens, title, content):
     # 复用原来的代码
