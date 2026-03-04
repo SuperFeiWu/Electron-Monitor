@@ -4752,6 +4752,13 @@
       "power_1h": 0.351,
       "power_24h": -5.096,
       "estimated_hours": 374.6
+    },
+    {
+      "time": "2026-03-04T13:44:26.016922",
+      "kwh": 131.5,
+      "power_1h": 0.0,
+      "power_24h": -5.141,
+      "estimated_hours": 13150.0
     }
   ],
   "room_529": [
@@ -9472,6 +9479,13 @@
       "power_1h": 0.0,
       "power_24h": 0.176,
       "estimated_hours": 103.0
+    },
+    {
+      "time": "2026-03-04T13:44:26.016922",
+      "kwh": 18.1,
+      "power_1h": 0.0,
+      "power_24h": 0.176,
+      "estimated_hours": 102.9
     }
   ]
 }
